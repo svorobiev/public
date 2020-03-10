@@ -1,7 +1,5 @@
 #include <unordered_map>
 
-using user_key_type = std::string;
-using user_value_type = std::string;
 
 struct intrusive_list_links {
     intrusive_list_links *flink = nullptr;
@@ -30,26 +28,29 @@ void remove_from_list(const intrusive_list_links *entry)
     next->blink = prev;
 }
 
-struct map_value_type {
-    intrusive_list_links links; // this chains the value with the other list entries
-    user_value_type m_value;
-
-    // throw in implicit conversions
-    operator user_value_type&() { return m_value; }
-    operator user_value_type() const { return m_value; }
-};
-
+template <typename K, typename V>
 class mymap {
+    using user_key_type = K;
+    using user_value_type = V;
+
+    struct map_value_type {
+        intrusive_list_links links; // this chains the value with the other list entries
+        user_value_type m_value;
+
+        // throw in implicit conversions
+        operator user_value_type&() { return m_value; }
+        operator user_value_type() const { return m_value; }
+    };
     using map_type = std::unordered_map<user_key_type, map_value_type>;
 
     // I want to do pointer tricks: 
-    static_assert(std::is_standard_layout<map_type::value_type>::value);
-    static map_type::value_type *to_value_type(intrusive_list_links *links)
+    static_assert(std::is_standard_layout<typename map_type::value_type>::value);
+    static typename map_type::value_type *to_value_type(intrusive_list_links *links)
     {
         constexpr size_t offset_of_links_in_value = offsetof(map_value_type, links);
-        constexpr size_t offset_of_value_in_map_value_type = offsetof(map_type::value_type, second);
+        constexpr size_t offset_of_value_in_map_value_type = offsetof(typename map_type::value_type, second);
         // yay, pointer tricks:
-        return (map_type::value_type *)
+        return (typename map_type::value_type *)
             (
                 ((char*)links)
                 - offset_of_links_in_value
@@ -83,8 +84,8 @@ class mymap {
     struct iterator {
         intrusive_list_links* position;
         iterator& operator++() { position = position->flink; return *this;};
-        map_type::value_type& operator*() { return *to_value_type(position); }
-        map_type::value_type* operator->() {return to_value_type(position);}
+        typename map_type::value_type& operator*() { return *to_value_type(position); }
+        typename map_type::value_type* operator->() {return to_value_type(position);}
         bool operator != (const iterator &other) const  {return position != other.position;}
         
     };
@@ -100,7 +101,7 @@ class mymap {
 
     // inserts an element if an equivalent element does not exist, else does nothing.
     // returns a reference to the inserted or previously existing KV
-    map_type::value_type *insert(const user_key_type &k, const user_value_type &v)
+    typename map_type::value_type *insert(const user_key_type &k, const user_value_type &v)
     {
         auto &value_already_in_map = m_data[k];
         // Is this a new value? default-constructed hash table node will have nulls
@@ -113,7 +114,7 @@ class mymap {
     }
 
     // removes an element using an iterator into the actual map
-    void remove(map_type::const_iterator it)
+    void remove(typename map_type::const_iterator it)
     {
         remove_from_list(&it->second.links);
         m_data.erase(it);
@@ -124,13 +125,20 @@ class mymap {
 
 int main()
 {
-    mymap foo;
+    mymap<std::string, std::string> foo;
     auto entry = foo.insert(std::string("hello, take one"), std::string("world"));
     std::string &value = entry->second;
     value = "WORLD";
-    foo.insert(std::string("hello, take two"), std::string("world"));
+    foo.insert(std::string("hello"), std::string("world"));
     foo.insert(std::string("hello, take three"), std::string("world"));
     for (auto kv : foo) {
         std::cout << kv.first << " " << kv.second.m_value << '\n';
     }
+    std::cout << "----------------------------------\n";
+
+    auto found = foo.data().find("hello");
+    foo.remove(found);
+    for (auto kv : foo) {
+        std::cout << kv.first << " " << kv.second.m_value << '\n';
+    }   
 }
